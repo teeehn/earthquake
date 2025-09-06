@@ -97,3 +97,124 @@ export async function upsertEarthquakeFeaturesToD1(db, features) {
   console.log(`[d1Utils-upsert] D1 upsert processing complete. Attempted: ${operations.length}, Success: ${successCount}, Errors: ${errorCount}`);
   return { successCount, errorCount };
 }
+
+/**
+ * Fetches and updates earthquake detail data from USGS
+ * This function is called after inserting new earthquakes to enrich them with product data
+ * @param {D1Database} db - The D1 database instance
+ * @param {number} minMagnitude - Minimum magnitude to fetch details for (default 3.0)
+ * @param {number} limit - Maximum number of earthquakes to process (default 10)
+ * @returns {Promise<{processed: number, errors: number}>}
+ */
+export async function enrichNewEarthquakesWithDetails(db, minMagnitude = 3.0, limit = 10) {
+  console.log(`[d1Utils-enrich] Starting enrichment for new earthquakes (M${minMagnitude}+, limit: ${limit})`);
+  
+  try {
+    // Query for recent earthquakes without detail data
+    const query = `
+      SELECT id, magnitude, place, event_time, usgs_detail_url
+      FROM EarthquakeEvents
+      WHERE detail_fetched = FALSE
+        AND magnitude >= ?
+      ORDER BY event_time DESC, magnitude DESC
+      LIMIT ?
+    `;
+    
+    const stmt = db.prepare(query).bind(minMagnitude, limit);
+    const result = await stmt.all();
+    
+    if (!result.results || result.results.length === 0) {
+      console.log('[d1Utils-enrich] No new earthquakes to enrich');
+      return { processed: 0, errors: 0 };
+    }
+    
+    let processed = 0;
+    let errors = 0;
+    
+    for (const earthquake of result.results) {
+      try {
+        const detailUrl = earthquake.usgs_detail_url || 
+          `https://earthquake.usgs.gov/earthquakes/feed/v1.0/detail/${earthquake.id}.geojson`;
+        
+        console.log(`[d1Utils-enrich] Fetching details for ${earthquake.id} (M${earthquake.magnitude})`);
+        
+        const response = await fetch(detailUrl, {
+          headers: {
+            "User-Agent": "EarthquakesLive-Enrichment/1.0 (+https://earthquakeslive.com)"
+          }
+        });
+        
+        if (!response.ok) {
+          throw new Error(`USGS API returned ${response.status}`);
+        }
+        
+        const detailData = await response.json();
+        const products = detailData?.properties?.products || {};
+        
+        // Extract product flags
+        const has_shakemap = !!(products.shakemap && products.shakemap.length > 0);
+        const has_moment_tensor = !!(products['moment-tensor'] && products['moment-tensor'].length > 0);
+        const has_focal_mechanism = !!(products['focal-mechanism'] && products['focal-mechanism'].length > 0);
+        const has_dyfi = !!(products.dyfi && products.dyfi.length > 0);
+        const has_losspager = !!(products.losspager && products.losspager.length > 0);
+        const has_finite_fault = !!(products['finite-fault'] && products['finite-fault'].length > 0);
+        
+        // Compute the enhanced data flag
+        const has_enhanced_data = has_shakemap || 
+                                 has_moment_tensor || 
+                                 has_focal_mechanism || 
+                                 has_finite_fault || 
+                                 has_losspager ||
+                                 has_dyfi;
+        
+        const products_json = JSON.stringify(Object.keys(products));
+        
+        // Update database
+        const updateStmt = db.prepare(`
+          UPDATE EarthquakeEvents
+          SET has_shakemap = ?,
+              has_moment_tensor = ?,
+              has_focal_mechanism = ?,
+              has_dyfi = ?,
+              has_losspager = ?,
+              has_finite_fault = ?,
+              has_enhanced_data = ?,
+              products_json = ?,
+              detail_fetched = TRUE,
+              detail_fetch_time = ?
+          WHERE id = ?
+        `).bind(
+          has_shakemap,
+          has_moment_tensor,
+          has_focal_mechanism,
+          has_dyfi,
+          has_losspager,
+          has_finite_fault,
+          has_enhanced_data,
+          products_json,
+          Date.now(),
+          earthquake.id
+        );
+        
+        await updateStmt.run();
+        processed++;
+        
+        console.log(`[d1Utils-enrich] Updated ${earthquake.id} with products: ${products_json}`);
+        
+        // Rate limiting: wait 1 second between requests
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+      } catch (error) {
+        console.error(`[d1Utils-enrich] Error processing ${earthquake.id}: ${error.message}`);
+        errors++;
+      }
+    }
+    
+    console.log(`[d1Utils-enrich] Enrichment complete. Processed: ${processed}, Errors: ${errors}`);
+    return { processed, errors };
+    
+  } catch (error) {
+    console.error(`[d1Utils-enrich] Fatal error during enrichment: ${error.message}`, error);
+    return { processed: 0, errors: 1 };
+  }
+}
