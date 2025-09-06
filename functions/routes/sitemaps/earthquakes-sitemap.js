@@ -27,8 +27,19 @@ async function generatePaginatedEarthquakeSitemap(db, pageNumber) {
   try {
     // Fetch a broader set of events and filter in code.
     // We fetch everything above a lower magnitude to catch events that might have faulting data but are < 4.5
+    // and also have at least two pieces of scientific data.
     const d1Results = await db.prepare(
-      "SELECT id, magnitude, place, event_time, geojson_feature FROM EarthquakeEvents WHERE id IS NOT NULL AND place IS NOT NULL AND magnitude >= ? ORDER BY event_time DESC LIMIT ? OFFSET ?"
+      `SELECT id, magnitude, place, event_time, geojson_feature FROM EarthquakeEvents
+       WHERE id IS NOT NULL AND place IS NOT NULL AND magnitude >= ?
+       AND (
+         COALESCE(has_shakemap, 0) +
+         COALESCE(has_moment_tensor, 0) +
+         COALESCE(has_focal_mechanism, 0) +
+         COALESCE(has_dyfi, 0) +
+         COALESCE(has_losspager, 0) +
+         COALESCE(has_finite_fault, 0)
+       ) >= 2
+       ORDER BY event_time DESC LIMIT ? OFFSET ?`
     ).bind(2.5, SITEMAP_PAGE_SIZE, offset).all(); // Fetch M2.5+ to filter in code
 
     const earthquakeEvents = d1Results.results;

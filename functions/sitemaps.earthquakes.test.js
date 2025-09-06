@@ -58,40 +58,77 @@ describe('Paginated Earthquake Sitemaps Handler (D1)', () => {
         mockCache.put.mockReset();
     });
 
-    it('/sitemaps/earthquakes-1.xml should return XML with only significant earthquakes', async () => {
+    it('/sitemaps/earthquakes-1.xml should return XML with only significant earthquakes that have 2+ data products', async () => {
         const now = Date.now();
         const nowInSeconds = Math.floor(now / 1000);
 
+        // NOTE: The logic has changed. The DB query itself now filters for events with 2+ data products.
+        // The in-code filter `isEventSignificant` then further refines this.
         const mockDbResults = {
             results: [
-                // 1. Significant by magnitude
+                // 1. Significant by magnitude AND has 2+ products. SHOULD BE IN SITEMAP.
                 {
-                    id: "ev_sig_mag", magnitude: MIN_SIGNIFICANT_MAGNITUDE, place: "Big Quake City",
-                    event_time: nowInSeconds - 3600, geojson_feature: JSON.stringify({ properties: { updated: now } })
+                    id: "ev_sig_mag_and_products",
+                    magnitude: MIN_SIGNIFICANT_MAGNITUDE, // is significant
+                    place: "Big Quake City",
+                    event_time: nowInSeconds - 3600,
+                    geojson_feature: JSON.stringify({ properties: { updated: now } }),
+                    has_shakemap: 1,
+                    has_moment_tensor: 1,
                 },
-                // 2. Significant by product (moment-tensor)
+                // 2. Significant by product in geojson, and has 2+ products. SHOULD BE IN SITEMAP.
                 {
-                    id: "ev_sig_product", magnitude: 4.4, place: "Faulty Towers",
-                    event_time: nowInSeconds - 7200, geojson_feature: JSON.stringify({
-                        properties: { updated: now - 10000, products: { "moment-tensor": [{}] } }
-                    })
+                    id: "ev_sig_product_and_products",
+                    magnitude: 4.4, // not significant by mag
+                    place: "Faulty Towers",
+                    event_time: nowInSeconds - 7200,
+                    geojson_feature: JSON.stringify({
+                        properties: { updated: now - 10000, products: { "moment-tensor": [{}] } } // is significant by product
+                    }),
+                    has_dyfi: 1,
+                    has_losspager: 1,
                 },
-                // 3. Not significant
+                // 3. Not significant, but has 2+ products. SHOULD BE FILTERED by isEventSignificant.
                 {
-                    id: "ev_not_significant", magnitude: 4.4, place: "Quiet Corner",
-                    event_time: nowInSeconds - 5000, geojson_feature: JSON.stringify({ properties: { updated: now - 2000 } })
+                    id: "ev_not_significant_but_products",
+                    magnitude: 4.4, // not significant
+                    place: "Quiet Corner",
+                    event_time: nowInSeconds - 5000,
+                    geojson_feature: JSON.stringify({ properties: { updated: now - 2000 } }),
+                    has_shakemap: 1,
+                    has_focal_mechanism: 1,
                 },
-                // 4. Also not significant (below 2.5)
-                {
-                    id: "ev_too_small", magnitude: 1.2, place: "Tiny Town",
-                    event_time: nowInSeconds - 8000, geojson_feature: JSON.stringify({ properties: { updated: now - 15000 } })
+                 // 4. Significant by magnitude, but <2 products. SHOULD BE FILTERED by the DB query.
+                 {
+                    id: "ev_sig_mag_no_products",
+                    magnitude: MIN_SIGNIFICANT_MAGNITUDE,
+                    place: "Lonely Outpost",
+                    event_time: nowInSeconds - 8000,
+                    geojson_feature: JSON.stringify({ properties: { updated: now - 15000 } }),
+                    has_shakemap: 1,
+                    has_moment_tensor: 0,
                 }
             ]
         };
 
         const request = new Request('http://localhost/sitemaps/earthquakes-1.xml');
-        // The mock now returns ALL results >= 2.5, as the code will filter them.
-        const context = createMockContext(request, {}, {}, mockDbResults);
+
+        // Manually filter the mock results to simulate the DB query's `WHERE` clause,
+        // since the mock DB doesn't actually execute the SQL.
+        const filteredMockResults = {
+            results: mockDbResults.results.filter(event => {
+                const productCount =
+                    (event.has_shakemap || 0) +
+                    (event.has_moment_tensor || 0) +
+                    (event.has_focal_mechanism || 0) +
+                    (event.has_dyfi || 0) +
+                    (event.has_losspager || 0) +
+                    (event.has_finite_fault || 0);
+                return productCount >= 2;
+            })
+        };
+
+        const context = createMockContext(request, {}, {}, filteredMockResults);
 
         const response = await onRequest(context);
         const text = await response.text();
@@ -99,22 +136,40 @@ describe('Paginated Earthquake Sitemaps Handler (D1)', () => {
         expect(response.status).toBe(200);
         expect(response.headers.get('Content-Type')).toContain('application/xml');
 
-        // The DB query should now fetch all quakes >= 2.5 for in-code filtering
+        // The DB query itself does the main filtering now.
+        const expectedQuery = `SELECT id, magnitude, place, event_time, geojson_feature FROM EarthquakeEvents
+       WHERE id IS NOT NULL AND place IS NOT NULL AND magnitude >= ?
+       AND (
+         COALESCE(has_shakemap, 0) +
+         COALESCE(has_moment_tensor, 0) +
+         COALESCE(has_focal_mechanism, 0) +
+         COALESCE(has_dyfi, 0) +
+         COALESCE(has_losspager, 0) +
+         COALESCE(has_finite_fault, 0)
+       ) >= 2
+       ORDER BY event_time DESC LIMIT ? OFFSET ?`;
+
+        // Check if the prepare statement was called with something that matches the new query structure
+        const calledSql = context.env.DB.prepare.mock.calls[0][0];
+        // Normalize whitespace for comparison
+        expect(calledSql.replace(/\s+/g, ' ')).toEqual(expectedQuery.replace(/\s+/g, ' '));
         expect(context.env.DB.bind).toHaveBeenCalledWith(2.5, SITEMAP_PAGE_SIZE_FOR_TEST, 0);
+
 
         expect(text).toContain('<urlset');
 
-        const expectedUrl1 = `https://earthquakeslive.com/quake/m${MIN_SIGNIFICANT_MAGNITUDE.toFixed(1)}-big-quake-city-ev_sig_mag`;
+        const expectedUrl1 = `https://earthquakeslive.com/quake/m${MIN_SIGNIFICANT_MAGNITUDE.toFixed(1)}-big-quake-city-ev_sig_mag_and_products`;
         expect(text).toContain(`<loc>${expectedUrl1}</loc>`);
 
-        const expectedUrl2 = `https://earthquakeslive.com/quake/m4.4-faulty-towers-ev_sig_product`;
+        const expectedUrl2 = `https://earthquakeslive.com/quake/m4.4-faulty-towers-ev_sig_product_and_products`;
         expect(text).toContain(`<loc>${expectedUrl2}</loc>`);
 
-        expect(text).not.toContain("ev_not_significant");
-        expect(text).not.toContain("ev_too_small");
+        // These should not be in the sitemap for different reasons
+        expect(text).not.toContain("ev_not_significant_but_products"); // Filtered by isEventSignificant
+        expect(text).not.toContain("ev_sig_mag_no_products"); // Filtered by DB query
 
         const urlCount = (text.match(/<url>/g) || []).length;
-        expect(urlCount).toBe(2); // Only the 2 significant events
+        expect(urlCount).toBe(2); // Only the 2 events that are both significant AND have 2+ products
     });
 
     it('/sitemaps/earthquakes-1.xml should use event_time if geojson_feature or properties.updated is missing/invalid', async () => {
