@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react'; // Added waitFor
 import { MemoryRouter } from 'react-router-dom';
 import { expect, describe, it, vi, beforeEach } from 'vitest';
+import { axe } from 'jest-axe';
 
 // Mock child components
 vi.mock('../components/InteractiveGlobeView', () => ({
@@ -117,10 +118,68 @@ describe('HomePage Rendering and Basic UI', () => {
   });
 
   describe('Accessibility', () => {
-    it.todo('should have accessibility tests implemented for HomePage');
+    it('should have no axe violations on initial render', async () => {
+      mockUseEarthquakeDataState.mockReturnValue({
+        ...defaultEarthquakeData,
+        isLoadingInitialData: false,
+        isInitialAppLoad: false,
+      });
+      mockFetchActiveClusters.mockResolvedValue([]);
+
+      const { container } = render(
+        <MemoryRouter initialEntries={['/']}>
+          <App />
+        </MemoryRouter>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('mock-globe-view')).toBeInTheDocument();
+      });
+
+      const results = await axe(container);
+      expect(results).toHaveNoViolations();
+    });
   });
 
   describe('Cluster Loading State Management', () => {
-    it.todo('should have tests implemented for cluster loading states');
+    it('passes the correct loading state to the globe', async () => {
+      // This test is now conceptual, as areClustersLoading is removed.
+      // We test the effect: activeClusters are updated asynchronously.
+      let resolveFetch;
+      const fetchPromise = new Promise(resolve => {
+        resolveFetch = resolve;
+      });
+      mockFetchActiveClusters.mockReturnValue(fetchPromise);
+
+      const initialQuakes = [{ id: 'q1', properties: { mag: 4.5, time: 1 } }];
+      mockUseEarthquakeDataState.mockReturnValue({
+        ...defaultEarthquakeData,
+        earthquakesLast7Days: initialQuakes,
+      });
+
+      render(
+        <MemoryRouter initialEntries={['/']}>
+          <App />
+        </MemoryRouter>
+      );
+
+      // Initially, fetch is called, but clusters are empty
+      await waitFor(() => {
+        expect(mockFetchActiveClusters).toHaveBeenCalledWith(initialQuakes, expect.any(Number), expect.any(Number));
+      });
+
+      const globe = screen.getByTestId('mock-globe-view');
+      const clustersProp = screen.getByTestId('active-clusters-prop');
+      expect(JSON.parse(clustersProp.textContent)).toEqual([]);
+
+      // Now, resolve the fetch with new clusters
+      const newClusters = [[{ id: 'c1', properties: { mag: 5.0, time: 2, place: 'Test' }, geometry: { coordinates: [0, 0, 0] } }]];
+      resolveFetch(newClusters);
+
+      // Wait for the state to update and be passed to the globe
+      await waitFor(() => {
+        expect(JSON.parse(clustersProp.textContent)).toEqual(newClusters);
+      });
+    });
   });
 });
