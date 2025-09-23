@@ -53,23 +53,31 @@ describe('Cluster Sitemap Handler and URL Generation', () => {
         mockCache.put.mockReset();
     });
 
-    it('/sitemap-clusters.xml should list clusters from D1 and return XML', async () => {
+    it('/sitemap-clusters.xml should list clusters from D1 that have quakes with 3+ advanced fields', async () => {
         const mockD1Results = [
-            // This slug should be a complete, final URL path segment
             { slug: "10-quakes-near-test-place-up-to-m5.0-cluster1", updatedAt: new Date().toISOString() },
         ];
         const request = new Request('http://localhost/sitemap-clusters.xml');
         const context = createMockContext(request);
         context.env.DB.all.mockResolvedValueOnce({ results: mockD1Results, success: true });
 
-        const response = await onRequest(context); // Uses handleClustersSitemapRequest internally
+        const response = await onRequest(context);
+        const text = await response.text();
+
         expect(response.status).toBe(200);
         expect(response.headers.get('Content-Type')).toContain('application/xml');
-        const text = await response.text();
         expect(text).toContain('<urlset');
         expect(text).toContain('https://earthquakeslive.com/cluster/10-quakes-near-test-place-up-to-m5.0-cluster1');
-        // Check the new SQL query structure
-        expect(context.env.DB.prepare).toHaveBeenCalledWith(expect.stringContaining("SELECT slug, updatedAt FROM ClusterDefinitions WHERE slug IS NOT NULL AND slug <> ''"));
+
+        const calledSql = context.env.DB.prepare.mock.calls[0][0];
+        // Check for key parts of the new, more complex query
+        expect(calledSql).toContain('SELECT DISTINCT cd.slug, cd.updatedAt');
+        expect(calledSql).toContain('FROM ClusterDefinitions cd');
+        expect(calledSql).toContain('JOIN json_each(cd.earthquakeIds) je');
+        expect(calledSql).toContain('JOIN EarthquakeEvents ee ON ee.id = je.value');
+        expect(calledSql).toContain('>= 3');
+        expect(calledSql).toContain('COALESCE(ee.has_moment_tensor, 0)');
+        expect(calledSql).not.toContain('has_dyfi');
     });
 
     it('/sitemap-clusters.xml should handle DB not configured', async () => {
