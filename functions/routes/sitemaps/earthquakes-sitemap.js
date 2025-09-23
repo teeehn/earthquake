@@ -32,13 +32,12 @@ async function generatePaginatedEarthquakeSitemap(db, pageNumber) {
       `SELECT id, magnitude, place, event_time, geojson_feature FROM EarthquakeEvents
        WHERE id IS NOT NULL AND place IS NOT NULL AND magnitude >= ?
        AND (
-         COALESCE(has_shakemap, 0) +
          COALESCE(has_moment_tensor, 0) +
          COALESCE(has_focal_mechanism, 0) +
-         COALESCE(has_dyfi, 0) +
-         COALESCE(has_losspager, 0) +
-         COALESCE(has_finite_fault, 0)
-       ) >= 2
+         COALESCE(has_finite_fault, 0) +
+         COALESCE(has_shakemap, 0) +
+         COALESCE(has_losspager, 0)
+       ) >= 3
        ORDER BY event_time DESC LIMIT ? OFFSET ?`
     ).bind(2.5, SITEMAP_PAGE_SIZE, offset).all(); // Fetch M2.5+ to filter in code
 

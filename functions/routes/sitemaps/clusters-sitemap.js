@@ -23,12 +23,21 @@ export async function handleClustersSitemapRequest(context) {
   }
 
   try {
-    // Fetch the canonical slug and updatedAt timestamp for each cluster definition.
-    // The slug is the part of the URL path after '/cluster/'.
-    // Ensures that only entries with valid slugs are included.
-    const d1Results = await env.DB.prepare(
-      "SELECT slug, updatedAt FROM ClusterDefinitions WHERE slug IS NOT NULL AND slug <> ''"
-    ).all();
+    // Fetch cluster definitions that contain at least one earthquake with 3+ advanced scientific fields.
+    const d1Results = await env.DB.prepare(`
+      SELECT DISTINCT cd.slug, cd.updatedAt
+      FROM ClusterDefinitions cd
+      JOIN json_each(cd.earthquakeIds) je
+      JOIN EarthquakeEvents ee ON ee.id = je.value
+      WHERE (
+        COALESCE(ee.has_moment_tensor, 0) +
+        COALESCE(ee.has_focal_mechanism, 0) +
+        COALESCE(ee.has_finite_fault, 0) +
+        COALESCE(ee.has_shakemap, 0) +
+        COALESCE(ee.has_losspager, 0)
+      ) >= 3
+      AND cd.slug IS NOT NULL AND cd.slug <> ''
+    `).all();
 
     const clusterDefinitions = d1Results.results;
 
