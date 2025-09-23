@@ -10,9 +10,9 @@
     "preview": "vite preview",
     "test": "vitest",
     "docs": "npx jsdoc -c jsdoc.json",
-    "deploy": "wrangler deploy src/worker.js",
-    "deploy:staging": "npx wrangler deploy --env staging",
-    "deploy:production": "npx wrangler deploy --env production"
+    "deploy": "wrangler deploy --env production",
+    "deploy:staging": "wrangler deploy --env staging",
+    "deploy:production": "wrangler deploy --env production"
   },
   "dependencies": {
     "d3-array": "^3.2.4",
