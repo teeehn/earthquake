@@ -76,6 +76,11 @@ const LearnPage = () => {
                                 Earthquake Safety and Preparedness
                             </Link>
                         </li>
+                        <li>
+                            <Link to="/learn/tsunamis-and-earthquakes" className="text-indigo-400 hover:text-indigo-300 hover:underline transition-colors">
+                                Tsunamis and Earthquakes
+                            </Link>
+                        </li>
                     </ul>
                 </div>
                  {/* ... other content from /learn route ... */}
