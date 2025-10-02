@@ -232,8 +232,46 @@ async function handlePrerenderEarthquake(request, env, ctx, quakeIdPathSegment) 
     let significanceSentence = `This earthquake occurred at a depth of ${depth} km.`;
     if (depth < 70) significanceSentence = `This shallow earthquake (depth: ${depth} km) may have been felt by many people in the area.`;
     else if (depth > 300) significanceSentence = `This earthquake occurred very deep (depth: ${depth} km).`;
-    const keywords = `earthquake, ${place ? place.split(', ').join(', ') : ''}, M${mag}, seismic event, earthquake report`;
-    const jsonLd = {"@context": "https://schema.org", "@type": "Event", name: `M ${mag} - ${place}`, description, startDate: isoTime, location: {"@type": "Place", geo: {"@type": "GeoCoordinates", latitude: lat, longitude: lon, elevation: -depth * 1000 }, name: place }, identifier: quakeData.id, url: canonicalUrl, keywords: keywords.toLowerCase()};
+    // Enhanced keywords with date-related terms
+    const month = dateObj.toLocaleDateString('en-US', { month: 'long', timeZone: 'UTC' }).toLowerCase();
+    const year = dateObj.getFullYear();
+    const formattedDate = dateObj.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' }).toLowerCase();
+    const dateKeywords = `, ${month} ${year}, ${formattedDate}, earthquake ${month} ${year}`;
+    const keywords = `earthquake, ${place ? place.split(', ').join(', ') : ''}, M${mag}, seismic event, earthquake report${dateKeywords}`;
+    
+    const jsonLd = {
+        "@context": "https://schema.org",
+        "@type": "Event",
+        name: `M ${mag} - ${place}`,
+        description,
+        startDate: isoTime,
+        endDate: isoTime,
+        eventStatus: "https://schema.org/EventCompleted",
+        eventAttendanceMode: "https://schema.org/OnlineEvent",
+        location: {
+            "@type": "Place",
+            geo: {
+                "@type": "GeoCoordinates",
+                latitude: lat,
+                longitude: lon,
+                elevation: -depth * 1000
+            },
+            name: place,
+            ...(place && { address: place })
+        },
+        identifier: quakeData.id,
+        url: canonicalUrl,
+        keywords: keywords.toLowerCase(),
+        image: `https://earthquake.usgs.gov/earthquakes/eventpage/${quakeData.id}/map`,
+        organizer: {
+            "@type": "Organization",
+            name: "USGS"
+        },
+        performer: {
+            "@type": "Organization", 
+            name: "USGS"
+        }
+    };
     if (usgsEventUrl) jsonLd.sameAs = usgsEventUrl;
     const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${escapeXml(pageTitle)}</title><meta name="description" content="${escapeXml(description)}"><meta name="keywords" content="${escapeXml(keywords.toLowerCase())}"><link rel="canonical" href="${escapeXml(canonicalUrl)}"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:site" content="@builtbyvibes"><meta property="og:title" content="${escapeXml(pageTitle)}"><meta property="og:description" content="${escapeXml(description)}"><meta property="og:url" content="${escapeXml(canonicalUrl)}"><meta property="og:type" content="website"><meta property="og:image" content="https://earthquakeslive.com/social-default-earthquake.png"><script type="application/ld+json">${JSON.stringify(jsonLd, null, 2)}</script></head><body><h1>${escapeXml(pageTitle)}</h1><p><strong>Time:</strong> ${escapeXml(readableTime)}</p><p><strong>Location:</strong> ${escapeXml(place)}</p><p><strong>Coordinates:</strong> ${lat.toFixed(4)}°N, ${lon.toFixed(4)}°E</p><p><strong>Magnitude:</strong> M ${mag}</p><p><strong>Depth:</strong> ${depth} km</p><p>${escapeXml(significanceSentence)}</p>${usgsEventUrl ? `<p><a href="${escapeXml(usgsEventUrl)}" target="_blank" rel="noopener noreferrer">View on USGS Event Page</a></p>` : ''}<div id="root"></div><script type="module" src="/src/main.jsx"></script></body></html>`;
     return new Response(html, { headers: { "Content-Type": "text/html", "Cache-Control": "public, s-maxage=3600" }});

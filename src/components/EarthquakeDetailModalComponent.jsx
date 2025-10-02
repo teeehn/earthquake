@@ -116,14 +116,26 @@ const EarthquakeDetailModalComponent = () => {
         const descriptionTime = time ? new Date(time).toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit', timeZone: 'UTC'}) : 'Time Unknown';
         const pageDescription = `Detailed report of the M ${mag} earthquake that struck near ${place} on ${titleDate} at ${descriptionTime} (UTC). Magnitude: ${mag}, Depth: ${depth} km. Location: ${latitude?.toFixed(2)}, ${longitude?.toFixed(2)}. Stay updated with Earthquakes Live.`;
 
-        const pageKeywords = `earthquake, seismic event, M ${mag}, ${place ? place.split(', ').join(', ') : ''}, earthquake details, usgs event, ${usgsEventId}`;
+        // Enhanced keywords with date-related terms
+        let dateKeywords = '';
+        if (time) {
+            const dateObj = new Date(time);
+            const month = dateObj.toLocaleDateString('en-US', { month: 'long', timeZone: 'UTC' }).toLowerCase();
+            const year = dateObj.getFullYear();
+            const day = dateObj.getDate();
+            const formattedDate = dateObj.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' }).toLowerCase();
+            dateKeywords = `, ${month} ${year}, ${formattedDate}, earthquake ${month} ${year}`;
+        }
+        
+        const pageKeywords = `earthquake, seismic event, M ${mag}, ${place ? place.split(', ').join(', ') : ''}, earthquake details, usgs event, ${usgsEventId}${dateKeywords}`;
         // canonicalPageUrl uses detailUrlParam (which is params['*']) directly as per requirements.
         const canonicalPageUrl = `https://earthquakeslive.com/quake/${detailUrlParam}`;
 
         const eventLocation = {
             '@type': 'Place',
             name: place,
-            address: place, // Using place directly for address
+            // For earthquakes, we use place as address since it's typically a location description
+            ...(place && { address: place }),
         };
 
         if (typeof latitude === 'number' && typeof longitude === 'number') {
@@ -143,7 +155,7 @@ const EarthquakeDetailModalComponent = () => {
             startDate: time ? new Date(time).toISOString() : undefined,
             endDate: time ? new Date(time).toISOString() : undefined, // Added endDate
             eventAttendanceMode: 'https://schema.org/OnlineEvent', // Added eventAttendanceMode
-            eventStatus: 'https://schema.org/EventScheduled', // Added eventStatus
+            eventStatus: 'https://schema.org/EventCompleted', // Past earthquake event
             location: eventLocation,
             image: shakemapIntensityImageUrl || 'https://earthquakeslive.com/placeholder-image.jpg', // Added default image
             keywords: pageKeywords.toLowerCase(),
