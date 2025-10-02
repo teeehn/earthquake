@@ -110,13 +110,23 @@ const EarthquakeDetailModalComponent = () => {
         const usgsEventPageUrl = props?.detail; // URL to the USGS event page
         const shakemapIntensityImageUrl = loadedData.shakemapIntensityImageUrl; // This was passed through from EarthquakeDetailView's onDataLoadedForSeo
 
-        const titleDate = time ? new Date(time).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC'}) : 'Date Unknown';
+        const eventDate = time ? new Date(time) : null;
+        const titleDate = eventDate ? eventDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC'}) : 'Date Unknown';
         const pageTitle = `M ${mag} Earthquake - ${place} - ${titleDate} | Earthquakes Live`;
 
-        const descriptionTime = time ? new Date(time).toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit', timeZone: 'UTC'}) : 'Time Unknown';
+        const descriptionTime = eventDate ? eventDate.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit', timeZone: 'UTC'}) : 'Time Unknown';
         const pageDescription = `Detailed report of the M ${mag} earthquake that struck near ${place} on ${titleDate} at ${descriptionTime} (UTC). Magnitude: ${mag}, Depth: ${depth} km. Location: ${latitude?.toFixed(2)}, ${longitude?.toFixed(2)}. Stay updated with Earthquakes Live.`;
 
-        const pageKeywords = `earthquake, seismic event, M ${mag}, ${place ? place.split(', ').join(', ') : ''}, earthquake details, usgs event, ${usgsEventId}`;
+        // Enhanced keywords with date information for better SEO
+        const dateKeywords = eventDate ? [
+            eventDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }).toLowerCase(),
+            eventDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).toLowerCase(),
+            eventDate.getUTCFullYear().toString(),
+            'earthquake ' + eventDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }).toLowerCase(),
+            'earthquake ' + eventDate.getUTCFullYear()
+        ].join(', ') : '';
+        
+        const pageKeywords = `earthquake, seismic event, M ${mag}, ${place ? place.split(', ').join(', ') : ''}, earthquake details, usgs event, ${usgsEventId}${dateKeywords ? ', ' + dateKeywords : ''}, earthquake live, earthquakes live, live earthquake`;
         // canonicalPageUrl uses detailUrlParam (which is params['*']) directly as per requirements.
         const canonicalPageUrl = `https://earthquakeslive.com/quake/${detailUrlParam}`;
 
@@ -141,25 +151,43 @@ const EarthquakeDetailModalComponent = () => {
             name: `M ${mag} - ${place}`, // Shorter name for JSON-LD
             description: pageDescription,
             startDate: time ? new Date(time).toISOString() : undefined,
-            endDate: time ? new Date(time).toISOString() : undefined, // Added endDate
-            eventAttendanceMode: 'https://schema.org/OnlineEvent', // Added eventAttendanceMode
-            eventStatus: 'https://schema.org/EventScheduled', // Added eventStatus
+            endDate: time ? new Date(time).toISOString() : undefined, // Earthquakes are instantaneous events
+            eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode', // Natural disasters are physical events
+            eventStatus: 'https://schema.org/EventPostponed', // Past event - EventPostponed is closest available option
             location: eventLocation,
-            image: shakemapIntensityImageUrl || 'https://earthquakeslive.com/placeholder-image.jpg', // Added default image
+            image: shakemapIntensityImageUrl || 'https://earthquakeslive.com/earthquake-default.jpg', // More specific default image
             keywords: pageKeywords.toLowerCase(),
             url: canonicalPageUrl,
             identifier: usgsEventId, // Using the actual USGS Event ID
             ...(usgsEventPageUrl && { sameAs: usgsEventPageUrl }), // Link to authoritative USGS event page
             performer: {
                 '@type': 'Organization',
-                name: 'USGS' // Generic performer
+                name: 'Earth', // Natural event - Earth as performer
+                url: 'https://www.usgs.gov/'
             },
             organizer: {
                 '@type': 'Organization',
-                name: 'USGS' // Generic organizer
+                name: 'United States Geological Survey (USGS)',
+                url: 'https://www.usgs.gov/',
+                sameAs: 'https://en.wikipedia.org/wiki/United_States_Geological_Survey'
+            },
+            // Additional fields to enhance structured data
+            isAccessibleForFree: true,
+            inLanguage: 'en',
+            maximumAttendeeCapacity: 0, // Natural disaster - no attendees
+            offers: {
+                '@type': 'Offer',
+                price: '0',
+                priceCurrency: 'USD',
+                availability: 'https://schema.org/InStock',
+                url: canonicalPageUrl,
+                validFrom: time ? new Date(time).toISOString() : undefined
+            },
+            about: {
+                '@type': 'Thing',
+                name: 'Seismic Activity',
+                description: 'Natural geological event caused by tectonic plate movement'
             }
-            // subjectOf is not typically used on Event itself, but on the WebPage about the event.
-            // However, canonicalUrl serves a similar purpose for the event's own page.
         };
 
         setSeoProps({

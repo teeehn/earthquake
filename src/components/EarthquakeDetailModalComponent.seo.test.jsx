@@ -143,7 +143,15 @@ describe('EarthquakeDetailModalComponent SEO', () => {
     const expectedPageTitle = `M ${props.mag} Earthquake - ${props.place} - ${titleDate} | Earthquakes Live`;
     const descriptionTime = new Date(props.time).toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit', timeZone: 'UTC'});
     const expectedDescription = `Detailed report of the M ${props.mag} earthquake that struck near ${props.place} on ${titleDate} at ${descriptionTime} (UTC). Magnitude: ${props.mag}, Depth: ${geom.coordinates[2]} km. Location: ${geom.coordinates[1]?.toFixed(2)}, ${geom.coordinates[0]?.toFixed(2)}. Stay updated with Earthquakes Live.`;
-    const expectedKeywords = `earthquake, seismic event, M ${props.mag}, ${props.place.split(', ').join(', ')}, earthquake details, usgs event, ${usgsEventId}`;
+    const eventDate = new Date(props.time);
+    const dateKeywords = [
+      eventDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }).toLowerCase(),
+      eventDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).toLowerCase(),
+      eventDate.getUTCFullYear().toString(),
+      'earthquake ' + eventDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }).toLowerCase(),
+      'earthquake ' + eventDate.getUTCFullYear()
+    ].join(', ');
+    const expectedKeywords = `earthquake, seismic event, M ${props.mag}, ${props.place.split(', ').join(', ')}, earthquake details, usgs event, ${usgsEventId}, ${dateKeywords}, earthquake live, earthquakes live, live earthquake`;
     const expectedCanonicalUrl = `https://earthquakeslive.com/quake/${encodeURIComponent('test-detail-url')}`;
 
     expect(lastSeoCall.eventJsonLd).toEqual({
@@ -153,8 +161,8 @@ describe('EarthquakeDetailModalComponent SEO', () => {
         description: expectedDescription,
         startDate: new Date(props.time).toISOString(),
         endDate: new Date(props.time).toISOString(),
-        eventAttendanceMode: 'https://schema.org/OnlineEvent',
-        eventStatus: 'https://schema.org/EventScheduled',
+        eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode',
+        eventStatus: 'https://schema.org/EventPostponed',
         location: {
           '@type': 'Place',
           name: props.place,
@@ -171,8 +179,33 @@ describe('EarthquakeDetailModalComponent SEO', () => {
         url: expectedCanonicalUrl,
         identifier: usgsEventId,
         sameAs: props.detail,
-        performer: { '@type': 'Organization', name: 'USGS' },
-        organizer: { '@type': 'Organization', name: 'USGS' }
+        performer: { 
+          '@type': 'Organization', 
+          name: 'Earth',
+          url: 'https://www.usgs.gov/' 
+        },
+        organizer: { 
+          '@type': 'Organization', 
+          name: 'United States Geological Survey (USGS)',
+          url: 'https://www.usgs.gov/',
+          sameAs: 'https://en.wikipedia.org/wiki/United_States_Geological_Survey'
+        },
+        isAccessibleForFree: true,
+        inLanguage: 'en',
+        maximumAttendeeCapacity: 0,
+        offers: {
+          '@type': 'Offer',
+          price: '0',
+          priceCurrency: 'USD',
+          availability: 'https://schema.org/InStock',
+          url: expectedCanonicalUrl,
+          validFrom: new Date(props.time).toISOString()
+        },
+        about: {
+          '@type': 'Thing',
+          name: 'Seismic Activity',
+          description: 'Natural geological event caused by tectonic plate movement'
+        }
     });
     expect(lastSeoCall.title).toBe(expectedPageTitle);
     expect(lastSeoCall.description).toBe(expectedDescription);
@@ -212,7 +245,7 @@ describe('EarthquakeDetailModalComponent SEO', () => {
             }
         }),
         identifier: usgsEventIdMinimal,
-        image: 'https://earthquakeslive.com/placeholder-image.jpg',
+        image: 'https://earthquakeslive.com/earthquake-default.jpg',
       })
     );
     expect(lastSeoCall.eventJsonLd.sameAs).toBeUndefined();

@@ -232,8 +232,69 @@ async function handlePrerenderEarthquake(request, env, ctx, quakeIdPathSegment) 
     let significanceSentence = `This earthquake occurred at a depth of ${depth} km.`;
     if (depth < 70) significanceSentence = `This shallow earthquake (depth: ${depth} km) may have been felt by many people in the area.`;
     else if (depth > 300) significanceSentence = `This earthquake occurred very deep (depth: ${depth} km).`;
-    const keywords = `earthquake, ${place ? place.split(', ').join(', ') : ''}, M${mag}, seismic event, earthquake report`;
-    const jsonLd = {"@context": "https://schema.org", "@type": "Event", name: `M ${mag} - ${place}`, description, startDate: isoTime, location: {"@type": "Place", geo: {"@type": "GeoCoordinates", latitude: lat, longitude: lon, elevation: -depth * 1000 }, name: place }, identifier: quakeData.id, url: canonicalUrl, keywords: keywords.toLowerCase()};
+    // Enhanced keywords with date information for better SEO
+    const dateKeywords = [
+      dateObj.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }).toLowerCase(),
+      dateObj.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).toLowerCase(),
+      dateObj.getUTCFullYear().toString(),
+      'earthquake ' + dateObj.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }).toLowerCase(),
+      'earthquake ' + dateObj.getUTCFullYear()
+    ].join(', ');
+    
+    const keywords = `earthquake, ${place ? place.split(', ').join(', ') : ''}, M${mag}, seismic event, earthquake report, ${dateKeywords}, earthquake live, earthquakes live, live earthquake`;
+    
+    const jsonLd = {
+      "@context": "https://schema.org", 
+      "@type": "Event", 
+      name: `M ${mag} - ${place}`, 
+      description, 
+      startDate: isoTime,
+      endDate: isoTime, // Earthquakes are instantaneous events
+      eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode', // Natural disasters are physical events
+      eventStatus: 'https://schema.org/EventPostponed', // Past event
+      location: {
+        "@type": "Place", 
+        geo: {
+          "@type": "GeoCoordinates", 
+          latitude: lat, 
+          longitude: lon, 
+          elevation: -depth * 1000 
+        }, 
+        name: place,
+        address: place
+      }, 
+      identifier: quakeData.id, 
+      url: canonicalUrl, 
+      keywords: keywords.toLowerCase(),
+      image: 'https://earthquakeslive.com/earthquake-default.jpg',
+      performer: {
+        "@type": "Organization",
+        name: "Earth",
+        url: "https://www.usgs.gov/"
+      },
+      organizer: {
+        "@type": "Organization",
+        name: "United States Geological Survey (USGS)",
+        url: "https://www.usgs.gov/",
+        sameAs: "https://en.wikipedia.org/wiki/United_States_Geological_Survey"
+      },
+      isAccessibleForFree: true,
+      inLanguage: "en",
+      maximumAttendeeCapacity: 0,
+      offers: {
+        "@type": "Offer",
+        price: "0",
+        priceCurrency: "USD",
+        availability: "https://schema.org/InStock",
+        url: canonicalUrl,
+        validFrom: isoTime
+      },
+      about: {
+        "@type": "Thing",
+        name: "Seismic Activity",
+        description: "Natural geological event caused by tectonic plate movement"
+      }
+    };
     if (usgsEventUrl) jsonLd.sameAs = usgsEventUrl;
     const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${escapeXml(pageTitle)}</title><meta name="description" content="${escapeXml(description)}"><meta name="keywords" content="${escapeXml(keywords.toLowerCase())}"><link rel="canonical" href="${escapeXml(canonicalUrl)}"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:site" content="@builtbyvibes"><meta property="og:title" content="${escapeXml(pageTitle)}"><meta property="og:description" content="${escapeXml(description)}"><meta property="og:url" content="${escapeXml(canonicalUrl)}"><meta property="og:type" content="website"><meta property="og:image" content="https://earthquakeslive.com/social-default-earthquake.png"><script type="application/ld+json">${JSON.stringify(jsonLd, null, 2)}</script></head><body><h1>${escapeXml(pageTitle)}</h1><p><strong>Time:</strong> ${escapeXml(readableTime)}</p><p><strong>Location:</strong> ${escapeXml(place)}</p><p><strong>Coordinates:</strong> ${lat.toFixed(4)}°N, ${lon.toFixed(4)}°E</p><p><strong>Magnitude:</strong> M ${mag}</p><p><strong>Depth:</strong> ${depth} km</p><p>${escapeXml(significanceSentence)}</p>${usgsEventUrl ? `<p><a href="${escapeXml(usgsEventUrl)}" target="_blank" rel="noopener noreferrer">View on USGS Event Page</a></p>` : ''}<div id="root"></div><script type="module" src="/src/main.jsx"></script></body></html>`;
     return new Response(html, { headers: { "Content-Type": "text/html", "Cache-Control": "public, s-maxage=3600" }});
